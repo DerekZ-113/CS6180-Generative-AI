@@ -4,6 +4,30 @@
 
 ## 1. Recap: The Gradient Problem in RNNs
 
+### RNN Forward Pass Example
+Consider the sentence: "the students opened their books"
+
+```
+Input:    [E]  →  [E]  →  [E]  →  [E]
+         the   students  opened   their   books
+           ↓       ↓        ↓       ↓
+         h^(0) → h^(1) → h^(2) → h^(3) → h^(4)
+           ↓       ↓        ↓       ↓
+         y^(1)   y^(2)   y^(3)   y^(4)
+```
+
+Where:
+- $h^{(t)} = \sigma(W_h h^{(t-1)} + W_e \vec{e}^{(t)} + b)$
+- $y^{(t)} = \text{softmax}(\vec{P} \cdot \vec{h}^{(t)} + \vec{b}_2)$
+- We use cross-entropy loss: $\mathcal{L}^{(t)} = -\sum_{w \in V} y_w^{(t)} \log \hat{y}_w^{(t)}$
+
+### Parameters
+The RNN has three main parameter sets:
+- $W_h$: Hidden-to-hidden weights
+- $W_e$: Embedding-to-hidden weights  
+- $P$: Hidden-to-output weights
+- $b, b_2$: Bias terms
+
 ### Backpropagation Through Time (BPTT) Derivation
 
 From previous lecture, we derived the gradient of loss with respect to hidden weights:
