@@ -49,7 +49,7 @@ from docopt import docopt
 from beam_search_diagnostics import format_example_sentence
 # from nltk.translate.bleu_score import corpus_bleu, sentence_bleu, SmoothingFunction
 import sacrebleu
-from nmt_model_sol import Hypothesis, NMT
+from nmt_model import Hypothesis, NMT
 import numpy as np
 from typing import List, Tuple, Dict, Set, Union
 from tqdm import tqdm

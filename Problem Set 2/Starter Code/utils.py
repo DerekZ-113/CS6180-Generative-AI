@@ -27,11 +27,20 @@ def pad_sents(sents, pad_token):
         than the max length sentence are padded out with the pad_token, such that
         each sentences in the batch now has equal length.
     """
-    # sents_padded = []
+    sents_padded = []
 
-    ### YOUR CODE HERE
-    
-    ### END YOUR CODE
+    longest_index = 0
+
+    for i in range(len(sents)):
+        if len(sents[i]) > len(sents[longest_index]):
+            longest_index = i
+
+    longest_sentence_len = len(sents[longest_index])
+
+    for sentence in sents:
+        diff = longest_sentence_len - len(sentence)
+        new_sentence = sentence + diff * [pad_token]
+        sents_padded.append(new_sentence)
 
     return sents_padded
 

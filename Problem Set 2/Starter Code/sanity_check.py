@@ -23,7 +23,7 @@ import nltk
 from utils import autograder_read_corpus
 from vocab import Vocab, VocabEntry
 
-from nmt_model_sol import NMT
+from nmt_model import NMT
 
 
 import torch
