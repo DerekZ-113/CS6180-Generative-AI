@@ -2,8 +2,6 @@
 **Date:** October 8, 2025  
 **Topic:** From Cross-Attention to Self-Attention & Building the Transformer Decoder
 
-**Administrative Note:** HW2 released!
-
 ---
 
 ## Overview
