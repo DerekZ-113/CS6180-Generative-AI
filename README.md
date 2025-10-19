@@ -1,6 +1,6 @@
 # CS 6180: Generative AI - Study Notes
 
-My personal study repository for **CS 6180 - Generative AI** at Northeastern University (Fall 2025). These are my lecture notes as I work through understanding neural networks, NLP, and the journey to modern generative AI.
+My personal study repository for **CS 6180 - Generative AI** at Northeastern University (Fall 2025). You can find the problem sets, lecture notes, and term project here.
 
 ## Problem Sets  
 **Please navigate to the answer using the links below. Every part inside problem sets has direct links!**
