@@ -3,7 +3,7 @@
 My personal study repository for **CS 6180 - Generative AI** at Northeastern University (Fall 2025). You can find problem sets, lecture notes, and term project here :D
 
 ## Problem Sets  
-**Please navigate to the answer using the links below. Every part inside problem sets has direct links!**
+**Please navigate to the answer using the links below. Every part inside problem sets has direct links!**  
 **[Problem Set 1](./Problem%20Set%201)**  
 **[Problem Set 2](./Problem%20Set%202)**
 
