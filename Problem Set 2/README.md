@@ -1,5 +1,7 @@
 ## Problem Set 2 Submission Quick Look-Up
 
+**Please visit [Problem Set 2 (My GitHUb)](https://github.com/DerekZ-113/CS6180-Generative-AI/tree/main/Problem%20Set%202) here for the whole problem set, and working links below!**
+
 ### Part 2.1: Word Embeddings
 - **[`pad_sents()` utils.py](Starter%20Code/utils.py#L20-L45)** - Padding sentences to equal length
 - **[`ModelEmbeddings.__init__()` model_embeddings.py](Starter%20Code/model_embeddings.py#L51-L52)** - Initialize source/target embeddings
