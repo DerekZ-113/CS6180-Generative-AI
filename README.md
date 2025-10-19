@@ -4,8 +4,8 @@ My personal study repository for **CS 6180 - Generative AI** at Northeastern Uni
 
 ## Problem Sets  
 **Please navigate to the answer using the links below. Every part inside problem sets has direct links!**  
-**[Problem Set 1](./Problem%20Set%201)**  
-**[Problem Set 2](./Problem%20Set%202)**
+- **[Problem Set 1](./Problem%20Set%201)**  
+- **[Problem Set 2](./Problem%20Set%202)**
 
 ## Lecture Notes
 
