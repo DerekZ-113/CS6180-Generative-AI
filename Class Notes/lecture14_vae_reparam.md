@@ -1,183 +1,97 @@
-# CS 6180 Lecture 14: VAE Reparametrization Trick and Implementation
+# CS 6180 Lecture 14: The Reparametrization Trick
 **Date:** October 27, 2025  
-**Topic:** Reparametrization Trick, Training VAEs, and MNIST Implementation
+**Topic:** Making VAE Training Practical Through Gradient Flow
 
 ---
 
 ## Overview
 
-This lecture continues the VAE discussion from Lecture 13, focusing on a critical technical innovation: the **reparametrization trick**. This technique enables backpropagation through stochastic sampling operations, making VAE training practical. We also cover the complete VAE training objective and implementation details for generating MNIST digits.
+This lecture introduces the **reparametrization trick**, the critical technical innovation that makes VAE training practical. Without it, we cannot backpropagate through stochastic sampling operations.
+
+**Prerequisites:** Lecture 13 (ELBO, VAE architecture, encoder/decoder specifications)
 
 ---
 
-## 1. Review: VAE Framework and Loss Function
+## 1. The Gradient Problem
 
-### The VAE Architecture
+### Naive Sampling Approach
 
-**Core components:**
+**From Lecture 13, we have:**
+- Encoder outputs: $\mu_\phi(X), \sigma_\phi(X)$
+- Need to sample: $z \sim q_\phi(z|X) = \mathcal{N}(\mu_\phi(X), \sigma_\phi^2(X))$
+- Then decode to get reconstruction
 
-```
-Image X → [Encoder] → Latent space z → [Decoder] → Reconstructed X'
-             ↓                              ↑
-         p(z|X)                         p(X|z)
-         (intractable)                  (reconstruction)
-```
-
-### The ELBO Loss Function
-
-From Lecture 13, we derived the Evidence Lower Bound (ELBO):
-
-$$\text{ELBO} = \mathbb{E}_{q_\phi(z|X)}[\log p_\theta(X|z)] - \text{KL}(q_\phi(z|X) \| p(z))$$
-
-**Two components:**
-
-**1. Reconstruction Loss** (maximize this):
-$$\mathbb{E}_{q_\phi(z|X)}[\log p_\theta(X|z)]$$
-- Measures how well decoder reconstructs original image
-- Want this to be **high** (good reconstruction)
-
-**2. KL Divergence Term** (minimize this):
-$$\text{KL}(q_\phi(z|X) \| p(z))$$
-- Measures difference between posterior and prior
-- Want this to be **low** (posterior stays close to prior)
-
-### Training Objective
-
-**Minimize negative ELBO:**
-
-$$\mathcal{L} = -\mathbb{E}_{q_\phi(z|X)}[\log p_\theta(X|z)] + \text{KL}(q_\phi(z|X) \| p(z))$$
-
-**This is a lower bound** to the log-likelihood function, since we're using $q_\phi(z|X)$ as an approximation of the intractable $p(z|X)$.
-
----
-
-## 2. Model Specification Review
-
-### Prior Distribution (Fixed)
-
-$$p(z) = \mathcal{N}(0, I)$$
-
-**Why this choice?**
-
-1. **Simple to sample from:** Standard normal is straightforward
-2. **Efficient KL computation:** KL between two Gaussians has closed form
-3. **Maximum entropy:** Encourages learning diverse features
-4. **Ensures spread:** Having variance in latent space helps model learn different features correctly
-
-**Key insight:** The prior creates a "regularizing" effect, preventing the latent space from collapsing to point estimates.
-
-### Encoder (Approximate Posterior)
-
-$$q_\phi(z|X) = \mathcal{N}(\mu_\phi(X), \sigma_\phi^2(X))$$
-
-**Why Gaussian?**
-
-- Not the exact posterior $p(z|X)$ (which is intractable)
-- Gaussian provides tractable approximation
-- Both $\mu_\phi(X)$ and $\sigma_\phi(X)$ are neural network outputs
-- Diagonal covariance matrix simplifies computation
-
-**Encoder architecture:**
-
-```
-X → [Neural Network] → μ_φ(X)  (mean)
-                    → σ_φ(X)  (standard deviation)
-```
-
-### Decoder (Likelihood)
-
-$$p_\theta(X|z) = \prod_i \text{Bernoulli}(x_i | f_\theta(z))$$
-
-Where $f_\theta(z)$ is a neural network (decoder) outputting probability for each pixel.
-
----
-
-## 3. The Reparametrization Trick: The Key Innovation
-
-### The Problem with Naive Sampling
-
-**Naive approach:** Sample directly from encoder distribution
-
-$$z \sim q_\phi(z|X) = \mathcal{N}(\mu_\phi(X), \sigma_\phi^2(X))$$
-
-**Problem:** Cannot backpropagate through stochastic sampling!
+**Problem:** Direct sampling breaks backpropagation!
 
 ```
 X → [Encoder] → μ_φ(X), σ_φ(X) → [Sample z] → [Decoder] → X'
                                      ↑
                                  STOCHASTIC
-                              (breaks gradients!)
+                              (no gradients!)
 ```
 
-**Why this breaks training:**
-- Sampling operation is not differentiable
+**Why this fails:**
+- Sampling operation is **not differentiable**
 - Cannot compute $\frac{\partial \mathcal{L}}{\partial \mu_\phi}$ or $\frac{\partial \mathcal{L}}{\partial \sigma_\phi}$
 - Gradients cannot flow back to encoder parameters $\phi$
+- **Training is impossible with standard backpropagation**
 
-### The Reparametrization Trick Solution
+**The loss function still requires this expectation:**
 
-**Key insight:** Separate randomness from parameters!
+$\mathcal{L} = -\mathbb{E}_{z \sim q_\phi(z|X)}[\log p_\theta(X|z)] + \text{KL}(q_\phi(z|X) \| p(z))$
 
-Instead of sampling $z$ directly, rewrite as:
+We need a way to compute gradients w.r.t. $\phi$!
 
-$$\boxed{z = \mu_\phi(X) + \sigma_\phi(X) \odot \varepsilon \quad \text{where } \varepsilon \sim \mathcal{N}(0, I)}$$
+---
+
+## 2. The Reparametrization Trick
+
+### The Key Insight
+
+**Instead of sampling $z$ directly, rewrite as:**
+
+$\boxed{z = \mu_\phi(X) + \sigma_\phi(X) \odot \varepsilon \quad \text{where } \varepsilon \sim \mathcal{N}(0, I)}$
 
 Where $\odot$ denotes element-wise multiplication.
 
-**This is mathematically equivalent:**
+### Proof of Equivalence
+
+**This transformation is mathematically equivalent to sampling from $\mathcal{N}(\mu_\phi(X), \sigma_\phi^2(X))$:**
 
 **Expected value:**
-$$\mathbb{E}[z] = \mathbb{E}[\mu_\phi(X) + \sigma_\phi(X) \odot \varepsilon] = \mu_\phi(X)$$
+$\mathbb{E}[z] = \mathbb{E}[\mu_\phi(X) + \sigma_\phi(X) \odot \varepsilon] = \mu_\phi(X) + \sigma_\phi(X) \odot \mathbb{E}[\varepsilon] = \mu_\phi(X)$
 
 **Variance:**
-$$\text{Var}(z) = \text{Var}(\sigma_\phi(X) \odot \varepsilon) = (\sigma_\phi(X))^2 \cdot \text{Var}(\varepsilon) = \sigma_\phi^2(X)$$
+$\text{Var}(z) = \text{Var}(\sigma_\phi(X) \odot \varepsilon) = (\sigma_\phi(X))^2 \cdot \text{Var}(\varepsilon) = \sigma_\phi^2(X) \cdot 1 = \sigma_\phi^2(X)$
 
 Therefore: $z \sim \mathcal{N}(\mu_\phi(X), \sigma_\phi^2(X))$ ✓
 
-### Why This Works
+### Why Gradients Now Flow
 
 **New computational graph:**
 
 ```
 X → [Encoder] → μ_φ(X), σ_φ(X) → [z = μ + σ⊙ε] → [Decoder] → X'
                                       ↑
-                  ε ~ N(0,I)    DETERMINISTIC PATH!
-                  (no gradients needed)
+                  ε ~ N(0,I)    DETERMINISTIC!
+                  (sample once, no gradients needed)
 ```
 
-**Key advantages:**
+**Critical observation:** The path from $\mu_\phi(X)$ and $\sigma_\phi(X)$ to $z$ is now **deterministic**!
 
-1. **Deterministic path:** From $\mu_\phi(X)$ and $\sigma_\phi(X)$ to loss $\mathcal{L}$
-2. **Randomness externalized:** Sample $\varepsilon$ independently (no gradients needed)
-3. **Gradients flow:** Can compute $\frac{\partial \mathcal{L}}{\partial \mu_\phi}$ and $\frac{\partial \mathcal{L}}{\partial \sigma_\phi}$
+**Gradient computation:**
 
-### Mathematical Derivation
+$\frac{\partial z}{\partial \mu_\phi} = I \quad \text{(identity matrix)}$
 
-Starting from the reconstruction loss:
+$\frac{\partial z}{\partial \sigma_\phi} = \text{diag}(\varepsilon) \quad \text{(diagonal matrix with } \varepsilon \text{ on diagonal)}$
 
-$$\mathbb{E}_{z \sim q_\phi(z|X)}[\log p_\theta(X|z)]$$
+Both gradients are well-defined! We can now backpropagate through the entire network.
 
-**Without reparametrization:** Cannot differentiate w.r.t. $\phi$
-
-**With reparametrization:**
-
-$$\mathbb{E}_{\varepsilon \sim \mathcal{N}(0,I)}[\log p_\theta(X|z)] \quad \text{where } z = \mu_\phi(X) + \sigma_\phi(X) \odot \varepsilon$$
-
-Now we can compute:
-
-$$\frac{\partial}{\partial \mu_\phi} \mathbb{E}_{\varepsilon}[\log p_\theta(X|z)] = \mathbb{E}_{\varepsilon}\left[\frac{\partial \log p_\theta(X|z)}{\partial z} \cdot \frac{\partial z}{\partial \mu_\phi}\right]$$
-
-Where:
-$$\frac{\partial z}{\partial \mu_\phi} = I \quad \text{(identity matrix)}$$
-
-Similarly:
-$$\frac{\partial z}{\partial \sigma_\phi} = \text{diag}(\varepsilon)$$
-
-**Gradient flow is now possible!** ✓
+**The randomness is externalized:** $\varepsilon$ is sampled independently and doesn't need gradients.
 
 ---
 
-## 4. Visualizing the Reparametrization Trick
+## 3. Visualization: Before and After
 
 ### Before Reparametrization
 
@@ -194,6 +108,11 @@ $$\frac{\partial z}{\partial \sigma_\phi} = \text{diag}(\varepsilon)$$
          z
          ↓
       Decoder
+         ↓
+      Loss ℒ
+         
+    ∂ℒ/∂μ_φ = ❌ Cannot compute
+    ∂ℒ/∂σ_φ = ❌ Cannot compute
 ```
 
 ### After Reparametrization
@@ -214,188 +133,85 @@ $$\frac{\partial z}{\partial \sigma_\phi} = \text{diag}(\varepsilon)$$
                    z
                    ↓
                 Decoder
+                   ↓
+                Loss ℒ
+                   
+    ∂ℒ/∂μ_φ = ✓ Computable!
+    ∂ℒ/∂σ_φ = ✓ Computable!
 ```
 
-### Latent Space Visualization
-
-```
-        N(0,1)  ← Prior p(z)
-         ↓
-    ┌─────────────────┐
-    │                 │
-    │    ○  ○  ○      │  ← Learned encoder pushes
-    │  ○        ○     │     towards certain regions
-    │    ○  ○  ○      │     (nose region)
-    │  ○  eyes  ○     │
-    │                 │  ← Different samples give
-    └─────────────────┘     different features
-```
-
-**The encoder learns:**
-- Where to place samples in latent space (mean $\mu_\phi$)
-- How much uncertainty/spread (variance $\sigma_\phi^2$)
-
-**The KL term ensures:**
-- Latent codes don't collapse to a single point
-- Posterior stays close to prior $\mathcal{N}(0, I)$
-- Model learns to use the latent space effectively
+**Key difference:** There's now a deterministic path from encoder outputs to loss, allowing gradient flow.
 
 ---
 
-## 5. Complete Training Algorithm
+## 4. Closed Form KL Divergence
 
-### Forward Pass
+### General Formula for Gaussians
 
-**Input:** Image $X$
+The second term in our loss is the KL divergence between two Gaussians:
 
-**Step 1: Encode**
-$$\mu_\phi(X), \sigma_\phi(X) = \text{Encoder}(X)$$
+$\text{KL}(q_\phi(z|X) \| p(z)) = \text{KL}(\mathcal{N}(\mu_\phi, \sigma_\phi^2) \| \mathcal{N}(0, I))$
 
-**Step 2: Sample noise**
-$$\varepsilon \sim \mathcal{N}(0, I)$$
+**For diagonal covariance Gaussians, this has a closed form:**
 
-**Step 3: Reparametrize**
-$$z = \mu_\phi(X) + \sigma_\phi(X) \odot \varepsilon$$
+$\boxed{\text{KL}(q_\phi(z|X) \| p(z)) = \frac{1}{2}\sum_{j=1}^{d} \left[\mu_{\phi,j}^2 + \sigma_{\phi,j}^2 - \log(\sigma_{\phi,j}^2) - 1\right]}$
 
-**Step 4: Decode**
-$$\hat{X} = \text{Decoder}(z)$$
+**Critical advantage:** No sampling required for this term! It's computed deterministically.
 
-**Step 5: Compute loss**
+### Interpretation of Each Term
 
-Reconstruction loss:
-$$\mathcal{L}_{\text{recon}} = -\log p_\theta(X|z) \approx -\sum_i x_i \log \hat{x}_i + (1-x_i)\log(1-\hat{x}_i)$$
+1. **$\mu_{\phi,j}^2$:** Penalizes mean far from 0 (prior mean)
+2. **$\sigma_{\phi,j}^2$:** Penalizes variance far from 1 (prior variance)
+3. **$-\log(\sigma_{\phi,j}^2)$:** Prevents variance collapse to 0
+4. **$-1$:** Normalization constant
 
-KL divergence (closed form for Gaussians):
-$$\mathcal{L}_{\text{KL}} = \text{KL}(q_\phi(z|X) \| \mathcal{N}(0,I)) = \frac{1}{2}\sum_j \left(\mu_{\phi,j}^2 + \sigma_{\phi,j}^2 - \log \sigma_{\phi,j}^2 - 1\right)$$
-
-Total loss:
-$$\mathcal{L} = \mathcal{L}_{\text{recon}} + \mathcal{L}_{\text{KL}}$$
-
-### Backward Pass
-
-**Step 6: Backpropagation**
-
-Compute gradients:
-$$\frac{\partial \mathcal{L}}{\partial \theta}, \frac{\partial \mathcal{L}}{\partial \phi}$$
-
-Thanks to reparametrization, these are well-defined!
-
-**Step 7: Update parameters**
-$$\theta \leftarrow \theta - \alpha \frac{\partial \mathcal{L}}{\partial \theta}$$
-$$\phi \leftarrow \phi - \alpha \frac{\partial \mathcal{L}}{\partial \phi}$$
+**Key advantage:** This can be computed **exactly** with no sampling required!
 
 ---
 
-## 6. KL Divergence: Closed Form for Gaussians
+## 5. MNIST Implementation Tasks
 
-### General KL Between Gaussians
+### Task 1: Reparametrization Trick (utils.py)
 
-For two Gaussian distributions:
-- $q = \mathcal{N}(\mu_q, \Sigma_q)$
-- $p = \mathcal{N}(\mu_p, \Sigma_p)$
-
-The KL divergence is:
-
-$$\text{KL}(q \| p) = \frac{1}{2}\left[\log\frac{|\Sigma_p|}{|\Sigma_q|} - d + \text{tr}(\Sigma_p^{-1}\Sigma_q) + (\mu_p - \mu_q)^T \Sigma_p^{-1}(\mu_p - \mu_q)\right]$$
-
-### Simplified Form for VAE
-
-In our case:
-- $q_\phi(z|X) = \mathcal{N}(\mu_\phi(X), \text{diag}(\sigma_\phi^2(X)))$
-- $p(z) = \mathcal{N}(0, I)$
-
-With diagonal covariance, the KL simplifies to:
-
-$$\boxed{\text{KL}(q_\phi(z|X) \| p(z)) = \frac{1}{2}\sum_{j=1}^{d} \left[\mu_{\phi,j}^2 + \sigma_{\phi,j}^2 - \log(\sigma_{\phi,j}^2) - 1\right]}$$
-
-**Interpretation of each term:**
-
-1. $\mu_{\phi,j}^2$: Penalizes mean far from 0
-2. $\sigma_{\phi,j}^2$: Penalizes variance far from 1
-3. $-\log(\sigma_{\phi,j}^2)$: Prevents variance collapse to 0
-4. $-1$: Normalization constant
-
-**Key insight:** This term can be computed in closed form (no sampling needed)!
-
----
-
-## 7. Practical Implementation: MNIST VAE
-
-### Dataset: MNIST Digits
-
-**Task:** Generate new handwritten digits (0-9)
-
-**Data:**
-- Images: 28×28 pixels
-- Pixel values: $x_i \in \{0, 1\}$ (binary: 0=white, 1=black)
-- Training set: 60,000 images
-
-### Model Architecture
-
-**Encoder:**
-```python
-Input: 784-dimensional vector (28×28 flattened)
-↓
-Dense(512) + ReLU
-↓
-Dense(256) + ReLU
-↓
-μ_φ: Dense(latent_dim)     # Mean
-σ_φ: Dense(latent_dim)     # Log variance (for numerical stability)
-```
-
-**Decoder:**
-```python
-Input: latent_dim-dimensional vector
-↓
-Dense(256) + ReLU
-↓
-Dense(512) + ReLU
-↓
-Dense(784) + Sigmoid  # Output probabilities for each pixel
-```
-
-**Latent dimension:** Typically 2-20 (hyperparameter to tune)
-
-### Implementation Tasks
-
-From the lecture notes, two key functions to implement:
-
-#### Task 1: Sample Gaussian Function (utils.py)
-
-**Implement the reparametrization trick:**
+**Implement `sample_gaussian` function:**
 
 ```python
 def sample_gaussian(mu, log_var):
     """
-    Reparametrization trick: sample from N(mu, var) using N(0,1)
+    Sample from N(mu, var) using reparametrization trick
     
     Args:
-        mu: Mean of distribution (batch_size, latent_dim)
+        mu: Mean (batch_size, latent_dim)
         log_var: Log variance (batch_size, latent_dim)
         
     Returns:
         z: Sampled latent codes (batch_size, latent_dim)
     """
-    # TODO: Implement
-    # Hint: Use torch.randn to sample epsilon
-    # z = mu + sigma * epsilon
-    # Remember: sigma = exp(0.5 * log_var)
+    # Step 1: Sample ε ~ N(0, I)
+    epsilon = torch.randn_like(mu)
+    
+    # Step 2: Compute σ = exp(0.5 * log_var)
+    sigma = torch.exp(0.5 * log_var)
+    
+    # Step 3: z = μ + σ ⊙ ε
+    z = mu + sigma * epsilon
+    
+    return z
 ```
 
-**Key points:**
+**Key implementation details:**
 - Use `torch.randn_like(mu)` to sample $\varepsilon$
-- Compute $\sigma = \exp(0.5 \cdot \log(\sigma^2))$ for numerical stability
-- Return $z = \mu + \sigma \odot \varepsilon$
+- Work with `log_var` for numerical stability
+- Compute $\sigma = \exp(0.5 \cdot \log(\sigma^2))$
 
-#### Task 2: Negative ELBO Loss (vae.py)
+### Task 2: Negative ELBO (vae.py)
 
 **Implement the complete loss function:**
 
 ```python
 def negative_elbo_bound(x, x_recon, mu, log_var):
     """
-    Compute negative ELBO = reconstruction_loss + KL_divergence
+    Compute -ELBO = reconstruction_loss + KL_divergence
     
     Args:
         x: Original images (batch_size, 784)
@@ -406,83 +222,40 @@ def negative_elbo_bound(x, x_recon, mu, log_var):
     Returns:
         loss: Negative ELBO (scalar)
     """
-    # TODO: Implement
-    # 1. Reconstruction loss: Binary cross-entropy
-    # 2. KL divergence: Closed form for Gaussian
+    # Reconstruction loss: Binary cross-entropy
+    recon_loss = F.binary_cross_entropy(x_recon, x, reduction='sum')
+    
+    # KL divergence: Closed form
+    # KL = 0.5 * sum(μ² + σ² - log(σ²) - 1)
+    kl_loss = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
+    
+    return recon_loss + kl_loss
 ```
 
-**Reconstruction loss** (binary cross-entropy):
-$$\mathcal{L}_{\text{recon}} = -\sum_i [x_i \log \hat{x}_i + (1-x_i)\log(1-\hat{x}_i)]$$
+**Reconstruction loss (binary cross-entropy):**
+$\mathcal{L}_{\text{recon}} = -\sum_i [x_i \log \hat{x}_i + (1-x_i)\log(1-\hat{x}_i)]$
 
-**KL divergence** (closed form):
-$$\mathcal{L}_{\text{KL}} = \frac{1}{2}\sum_j [\mu_j^2 + e^{\log \sigma_j^2} - \log \sigma_j^2 - 1]$$
+**KL divergence (closed form):**
+$\mathcal{L}_{\text{KL}} = \frac{1}{2}\sum_j [\mu_j^2 + e^{\log \sigma_j^2} - \log \sigma_j^2 - 1]$
 
----
+### Why Log Variance?
 
-## 8. Training Dynamics and Insights
-
-### What the Model Learns
-
-**Encoder learns:**
-- **Mean $\mu_\phi(X)$:** Where in latent space to place this image
-  - Similar digits cluster together
-  - Smooth interpolation between digit types
-  
-- **Variance $\sigma_\phi^2(X)$:** How uncertain the encoding is
-  - Clear, well-formed digits → low variance
-  - Ambiguous or distorted digits → high variance
-
-**Decoder learns:**
-- How to map latent codes to pixel probabilities
-- Gradual transitions between digit styles
-
-### Balancing the Two Loss Terms
-
-**Reconstruction loss** pushes the model to:
-- Encode each image precisely
-- Minimize variance (for accurate reconstruction)
-- Risk: Overfitting, no diversity
-
-**KL divergence** pushes the model to:
-- Keep latent codes close to $\mathcal{N}(0, I)$
-- Maintain variance in latent space
-- Risk: Blurry reconstructions
-
-**Trade-off:** These two terms compete!
-
-**Solution:** Some implementations use a $\beta$ parameter:
-
-$$\mathcal{L} = \mathcal{L}_{\text{recon}} + \beta \cdot \mathcal{L}_{\text{KL}}$$
-
-- $\beta < 1$: Prioritize reconstruction (sharper images)
-- $\beta > 1$: Prioritize regularization (more diverse sampling)
-- $\beta = 1$: Standard VAE (theoretically justified)
-
-### Generating New Digits
-
-**Once trained:**
-
-1. Sample $z \sim \mathcal{N}(0, I)$ (no encoder needed!)
-2. Pass through decoder: $\hat{X} = \text{Decoder}(z)$
-3. Sample pixels: $x_i \sim \text{Bernoulli}(\hat{x}_i)$
-
-**Latent space exploration:**
-- Sample different $z$ values → different digits
-- Interpolate between two $z$ values → smooth transitions
-- Modify specific dimensions → control features (thickness, slant, etc.)
+**Numerical stability:** Working with $\log(\sigma^2)$ instead of $\sigma^2$ prevents:
+- Numerical overflow when $\sigma^2$ is large
+- Numerical underflow when $\sigma^2$ is small
+- Ensures $\sigma^2 = e^{\log(\sigma^2)} > 0$ always
 
 ---
 
-## 9. Limitations of Reparametrization Trick
+## 6. Limitations and Scope
 
-### When It Works
+### When Reparametrization Works
 
 ✓ **Normal (Gaussian) distributions**
-- Most common case
 - Clean mathematical solution
-- Efficient to implement
+- Most common case for VAEs
 
-✓ **Other location-scale families**
+✓ **Location-scale families**
 - Distributions of form: $x = \mu + \sigma \cdot \varepsilon$
 - Examples: Logistic, Laplace, Uniform
 
@@ -491,95 +264,71 @@ $$\mathcal{L} = \mathcal{L}_{\text{recon}} + \beta \cdot \mathcal{L}_{\text{KL}}
 ✗ **Discrete distributions**
 - Bernoulli, Categorical, Multinomial
 - No continuous path for gradients
-- Require alternative techniques (REINFORCE, Gumbel-Softmax)
+- **Alternative:** REINFORCE, Gumbel-Softmax trick
 
 ✗ **General distributions**
-- Not all distributions have location-scale form
-- May need specialized reparametrizations
-- Active research area
+- Not all have location-scale form
+- Requires specialized techniques
 
-**Alternative gradient estimators:**
-- **REINFORCE (score function estimator):** High variance
-- **Gumbel-Softmax trick:** For categorical distributions
-- **Straight-through estimators:** Biased but practical
+**Note:** The reparametrization trick applies to **normal distributions**, not all distributions.
 
 ---
 
 ## Key Takeaways
 
-### 1. The Reparametrization Trick
-**Problem:** Cannot backpropagate through stochastic sampling
-**Solution:** $z = \mu_\phi(X) + \sigma_\phi(X) \odot \varepsilon$ where $\varepsilon \sim \mathcal{N}(0,I)$
-**Result:** Deterministic path for gradients, randomness externalized
+### 1. The Core Problem
+Naive sampling $z \sim \mathcal{N}(\mu_\phi, \sigma_\phi^2)$ blocks gradient flow because sampling is not differentiable.
 
-### 2. Why This is Critical
-- Enables training of VAEs with standard backpropagation
-- No need for high-variance gradient estimators
-- Makes VAEs practical and efficient
+### 2. The Solution
+**Reparametrization trick:** $z = \mu_\phi(X) + \sigma_\phi(X) \odot \varepsilon$ where $\varepsilon \sim \mathcal{N}(0, I)$
 
-### 3. Complete VAE Training
-**Loss:** $\mathcal{L} = -\mathbb{E}[\log p_\theta(X|z)] + \text{KL}(q_\phi(z|X) \| p(z))$
-**Gradients:** Flow through both $\mu_\phi$ and $\sigma_\phi$
-**Training:** Standard SGD/Adam with backpropagation
+**Why it works:**
+- Mathematically equivalent to sampling from $\mathcal{N}(\mu_\phi, \sigma_\phi^2)$
+- Creates deterministic path from encoder outputs to loss
+- Externalizes randomness (no gradients needed for $\varepsilon$)
+
+### 3. Gradient Flow
+$\frac{\partial z}{\partial \mu_\phi} = I, \quad \frac{\partial z}{\partial \sigma_\phi} = \text{diag}(\varepsilon)$
+
+Both gradients are well-defined, enabling standard backpropagation.
 
 ### 4. KL Divergence Closed Form
 For Gaussian prior and posterior:
-$$\text{KL} = \frac{1}{2}\sum_j [\mu_j^2 + \sigma_j^2 - \log \sigma_j^2 - 1]$$
-No sampling needed for this term!
+$\text{KL} = \frac{1}{2}\sum_j [\mu_j^2 + \sigma_j^2 - \log \sigma_j^2 - 1]$
 
-### 5. Trade-offs in VAE Training
-- Reconstruction loss vs. KL regularization
-- Sharpness vs. diversity
-- Controlled by $\beta$ hyperparameter
+**No sampling needed** for this term!
 
-### 6. Practical Implementation
+### 5. Implementation Practices
 - Use `log_var` instead of `var` for numerical stability
-- Sample $\varepsilon \sim \mathcal{N}(0,I)$ using `torch.randn`
-- Binary cross-entropy for pixel-level reconstruction
+- Sample $\varepsilon \sim \mathcal{N}(0, I)$ using `torch.randn`
+- Binary cross-entropy for reconstruction (MNIST pixels)
+- Sum both losses for total negative ELBO
 
-### 7. Generation Process
-1. Sample $z \sim \mathcal{N}(0, I)$
-2. Decode: $p_\theta(X|z)$
-3. Sample pixels from Bernoulli distributions
+### 6. Scope Limitation
+Reparametrization trick works for **Gaussian (and location-scale) distributions only**. Other distributions require alternative gradient estimators.
 
 ---
 
 ## Mathematical Notation Legend
 
-### Model Components
-- $X$ = observed image (data)
+### Core Variables
 - $z$ = latent variable
 - $\varepsilon$ = noise sample from $\mathcal{N}(0, I)$
-- $\theta$ = decoder parameters
-- $\phi$ = encoder parameters
+- $\mu_\phi(X)$ = encoder mean
+- $\sigma_\phi(X)$ = encoder standard deviation
+- $\log \sigma_\phi^2(X)$ = log variance
 
-### Distributions
-- $p(z) = \mathcal{N}(0, I)$ = prior (standard normal)
-- $p_\theta(X|z)$ = decoder/likelihood
-- $q_\phi(z|X) = \mathcal{N}(\mu_\phi(X), \sigma_\phi^2(X))$ = encoder (approximate posterior)
-- $p(z|X)$ = true posterior (intractable)
+### Gradients
+- $\frac{\partial z}{\partial \mu_\phi}$ = gradient of $z$ w.r.t. mean
+- $\frac{\partial z}{\partial \sigma_\phi}$ = gradient of $z$ w.r.t. std deviation
+- $\frac{\partial \mathcal{L}}{\partial \phi}$ = gradient of loss w.r.t. encoder parameters
 
-### Network Outputs
-- $\mu_\phi(X)$ = encoder mean (neural network)
-- $\sigma_\phi(X)$ = encoder standard deviation (neural network)
-- $\log \sigma_\phi^2(X)$ = log variance (for numerical stability)
-- $f_\theta(z)$ = decoder output (pixel probabilities)
-
-### Loss Terms
-- $\mathcal{L}_{\text{recon}}$ = reconstruction loss
-- $\mathcal{L}_{\text{KL}}$ = KL divergence term
+### Loss Components
+- $\mathcal{L}_{\text{recon}}$ = reconstruction loss (binary cross-entropy)
+- $\mathcal{L}_{\text{KL}}$ = KL divergence term (closed form)
 - $\mathcal{L}$ = total loss (negative ELBO)
 
 ### Operators
 - $\odot$ = element-wise (Hadamard) multiplication
-- $\mathbb{E}[\cdot]$ = expectation
-- $\sim$ = "distributed as"
 - $\text{diag}(\cdot)$ = diagonal matrix
-- $|\Sigma|$ = determinant of $\Sigma$
-- $\text{tr}(\cdot)$ = trace
-
-### Constants
-- $d$ = latent dimension
 - $I$ = identity matrix
-- $\alpha$ = learning rate
-- $\beta$ = KL weight (optional, default=1)
