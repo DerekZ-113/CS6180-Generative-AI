@@ -223,3 +223,14 @@ zh_en_data/
 
 # VS Code
 .vscode/
+
+# ===== CS6180 PS3 Specific =====
+# Model checkpoints (PyTorch models)
+checkpoints/
+*.pt
+
+# MNIST data
+data/
+
+# Training logs
+logs/
