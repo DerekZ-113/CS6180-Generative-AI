@@ -5,6 +5,7 @@ import shutil
 import sys
 import torch
 from vae import VAE
+from gmvae import GMVAE
 from torch.nn import functional as F
 from torchvision import datasets, transforms
 
@@ -36,7 +37,7 @@ def sample_gaussian(m, v):
     # TODO: Modify/complete the code here
     # Sample z
     ################################################################################
-    stand_normal = torch.randn(m.shape)
+    stand_normal = torch.randn_like(m)
     z = stand_normal*torch.sqrt(v) + m
     ################################################################################
     # End of code modification
@@ -89,6 +90,11 @@ def log_normal_mixture(z, m, v):
     # Compute the uniformly-weighted mixture of Gaussians density for each sample
     # in the batch
     ################################################################################
+    z = z.unsqueeze(1)
+
+    log_probs = log_normal(z, m, v)
+
+    log_prob = log_mean_exp(log_probs, dim=1)
 
     ################################################################################
     # End of code modification

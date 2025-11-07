@@ -37,7 +37,6 @@ class GMVAE(nn.Module):
         ################################################################################
         # TODO: Modify/complete the code here
         # Compute negative Evidence Lower Bound and its KL and Rec decomposition
-        #
         # To help you start, we have computed the mixture of Gaussians prior
         # prior = (m_mixture, v_mixture) for you, where
         # m_mixture and v_mixture each have shape (1, self.k, self.z_dim)
@@ -48,6 +47,23 @@ class GMVAE(nn.Module):
         ################################################################################
         # Compute the mixture of Gaussian prior
         prior = ut.gaussian_parameters(self.z_pre, dim=1)
+
+        qm, qv = self.enc.encode(x)
+
+        z = ut.sample_gaussian(qm, qv)
+
+        logits = self.dec.decode(z)
+        rec = -torch.mean(ut.log_bernoulli_with_logits(x, logits))
+
+        log_q = ut.log_normal(z, qm, qv)
+
+        m_mixture = prior[0].expand(x.size(0), -1, -1)
+        v_mixture = prior[1].expand(x.size(0), -1, -1)
+        log_p = ut.log_normal_mixture(z, m_mixture, v_mixture)
+
+        kl = torch.mean(log_q - log_p)
+
+        nelbo = kl + rec
         ################################################################################
         # End of code modification
         ################################################################################

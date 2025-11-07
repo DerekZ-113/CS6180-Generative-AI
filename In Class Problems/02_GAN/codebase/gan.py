@@ -21,6 +21,12 @@ def loss_nonsaturating(g, d, x_real, *, device):
     # You may find some or all of the below useful:
     #   - F.binary_cross_entropy_with_logits
     #   - F.logsigmoid
+
+    x_fake = g(z)
+
+    d_loss_real = -F.logsigmoid(x_real)
+    d_loss_fake = -F.logsigmoid(-x_fake)
+    d_loss = 
     raise NotImplementedError
     # YOUR CODE ENDS HERE
 
